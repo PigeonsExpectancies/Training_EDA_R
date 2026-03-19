@@ -22,18 +22,20 @@
 
 # Libraries
 library(tidyverse)    # Data manipulation and visualization
+library(ggplot2)
 library(rpart)        # To define tree models
 library(rpart.plot)   # To plot them
 library(randomForest) # Random forest for classification trees
 library(corrplot)     # Correlation plot
+library(plotROC)      # ROC curve classification prediction
 
 
 # =============================================================================================
 
 
 
-          # ==== PART I: First observations ==== #
-          # ==================================== #
+# ==== PART I: First observations ==== #
+# ==================================== #
 
 
 # Time processing study
@@ -61,16 +63,16 @@ ggplot(data = df_subtypes, aes(x = Subtype, fill = Evaluation_type)) +
 # Correlation between groups
 
 
-          # ==== PART II: Hypothesis and protocol ==== #
-          # ========================================== #
+# ==== PART II: Hypothesis and protocol ==== #
+# ========================================== #
 
 
 # Hypothesis: Differences in gene expression according to different subtypes of breast cancer
 
 
 
-          # ==== PART III: Classification & Prediction ==== #
-          # =============================================== #
+# ==== PART III: Classification & Prediction ==== #
+# =============================================== #
 
 # ---- Classification model: Predicting subtypes ~ genes ---- #
 
@@ -167,7 +169,7 @@ rpart.plot(pruned_tree_iRDM, cex = 0.6, box.palette = "Blues", extra = 1)
 x = pruned_tree_iRDM$variable.importance
 df_importance_iRDM = data.frame(
   Variable = factor(names(x),
-  levels = names(x)),
+                    levels = names(x)),
   Importance = as.numeric(x))
 
 # y_test = predict(pruned_tree, newdata = New_CT_iRDM_df, type = 'class') # output: most probable class
@@ -183,11 +185,118 @@ ggplot(df_importance_iRDM, aes(x = Importance, y = Variable)) +
 
 
 # Random forest
-forest_iRDM = randomForest(iRDM_subtype ~ ., data = Class_iRDM_df)
+forest_iRDM = randomForest(iRDM_subtype ~ ., data = Class_iRDM_df) 
+# Fin a way to show only the intesrting without the errors
 plot(forest_iRDM)
 
 
-# ROC Curve
+# Optimization of the number of randomly selected variables
+
+# Number of variables
+nb_vars_iRDM = 1:(ncol(Class_iRDM_df)-1) # test between 1 and max: number of columns - the response variable
+# nb_vars = 1:25 # Failsafe --> if count too long, use this line
+
+# Evaluation of the error as a function of the number of variables chosen
+num_tree = 200  # Plot shows that 200-250 trees are enough
+
+Error_OOB_nbvars = c() # Create a vector - then fill it in
+for (i in nb_vars){
+  print(paste(i, "variable(s) tested")) # to check what is happening
+  forest = randomForest(iRDM_subtype ~ ., data = train, mtry = i, ntree = num_tree)
+  Error_OOB_nbvars[i] = forest$err.rate[num_tree, "OOB"]}
+
+# Representation of the out-of-the-bag error as a function of the number of variables
+plot(nb_vars, Error_OOB_nbvars)
+
+optimal_forest = randomForest(iRDM_subtype ~ ., 
+                              data = train,
+                              mtry = 7, 
+                              ntree = 200, 
+                              importance = TRUE)
+
+df_importance_iRDM_2 = data.frame(optimal_forest$importance)
+View(df_importance_iRDM_2)
+
+varImpPlot(optimal_forest, 
+           type = 1, 
+           scale = FALSE,
+           n.var = ncol(Class_iRDM_df)-1, 
+           cex = 0.8,
+           main = "Importance of variables")
+
+# Prediction of new points
+
+# prediction = predict(optimal_forest, newdata = test, type = 'prob')
+# plot(prediction)
+# sum(prediction == test$iRDM_subtype)/length(prediction)
+# 
+# annotation = test$iRDM_subtype
+# annotation_iRDM_subtypes = annotation[annotation == 1]
+# prediction_iRDM_subtypes = prediction[annotation == 1]
+# sum(annotation_iRDM_subtypes == prediction_iRDM_subtypes)/length(annotation_iRDM_subtypes)
+
+# Get the predictions (probabilities) from a tree or a forest on a test sample:
+
+prediction = predict(optimal_forest, newdata = test, type = "prob")
+vector_with_predictions = prediction[,7]
+
+
+# save results of the prediction (probabilities) in a dataframe
+truth_lumA = as.numeric(test$iRDM_subtype == 'LumA')
+truth_lumB = as.numeric(test$iRDM_subtype == 'LumB')
+prediction = vector_with_predictions
+
+roc_df1 = data.frame(truth_lumA, prediction)
+plot(roc_df)
+
+
+
+
+
+
+
+ggplot(roc_df) +
+  geom_roc(aes(d = truth_lumA, m = prediction), col = 'lightblue', labelsize = 3) + # draw ROC curve
+  geom_roc(aes(d = truth_lumB, m = prediction), col = 'lightgreen', labelsize = 3) +
+  style_roc(
+    xlab = 'False Positive Fraction',   # modify x/y-axis labels
+    ylab = 'True Positive Fraction') +
+  geom_abline(slope = 1, intercept = 0) # add a unit slope line
+
+
+
+
+
+multiclass.roc(
+  response = roc_df$truth,
+  predictor = roc_df$prediction)
+
+
+
+# \\\\\\\\\\\ TEST MULTICLASS METHOD ///////////////
+library(pROC)
+library(e1071)
+library(caret)
+
+svm_model <- svm(iRDM_subtype ~ ., data = train, probability = TRUE)
+predictions <- predict(svm_model, test, probability = TRUE)
+probabilities <- attr(predictions, 'probabilities')
+
+roc_curves <- list()
+for(class in levels(Class_iRDM_df$iRDM_subtype)) {
+  binary_labels <- as.numeric(test$iRDM_subtype == class)
+  roc_curve <- roc(binary_labels, probabilities[, class])
+  roc_curves[[class]] <- roc_curve
+}
+
+plot(roc_curves[[1]], col = 'red')
+lines(roc_curves[[2]], col = 'blue')
+lines(roc_curves[[3]], col = 'green')
+lines(roc_curves[[4]], col = 'yellow')
+lines(roc_curves[[5]], col = 'orange')
+lines(roc_curves[[6]], col = 'purple')
+lines(roc_curves[[7]], col = 'brown')
+legend("bottomright", legend = levels(Class_iRDM_df$iRDM_subtype), col = c('red', 'blue', 'green', 'yellow', 'orange', 'purple', 'brown'), lwd = 2)
 
 
 
@@ -216,12 +325,6 @@ plot(forest_iRDM)
 
 
 
-## Survival model: Predicting DMFS (Year/event) ~ genes and subtypes
-
-# Transform DMFS_event in binary / Cleanse NA
-# Build tree: DMFS_event ~ iRDM_subtypes + PAM50_subtypes + Proliferation_group + Immunity_group + 72 gènes
-# Does any genes are more important ? 
-
 # Visualization + Visualization clusters using UMAP
 
 
@@ -233,6 +336,7 @@ plot(forest_iRDM)
 # Visualization
 
 
+# --------------------
 
-
-
+# From classification analysis and clustering --> Regroup subtypes together
+# Identify which genes is specific to each subtypes
