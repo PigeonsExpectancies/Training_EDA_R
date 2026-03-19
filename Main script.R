@@ -118,11 +118,25 @@ Class_iRDM_df <- GSE113863 %>%   # Select only iRDM//genes corresponding
 # Factorize the response_variable VARIABLE DE FDP QUI M4A BOUSILLE 3H DE MA VIE
 Class_iRDM_df$iRDM_subtype <- factor(Class_iRDM_df$iRDM_subtype)
 
-# Separate a dataset in a train and test subsets
-sample_iRDM <- sample(c(TRUE, FALSE), nrow(dataset_iRDM), replace=TRUE, prob=c(0.7,0.3))
 
-train  <- dataset_iRDM[sample_iRDM, ]
-test   <- dataset_iRDM[!sample_iRDM, ]
+# ///////////////////////////////////////////////////////////////////////////  #
+# 1. Distribution des classes (CAUSE #1)
+print("=== DISTRIBUTION iRDM_subtype ===")
+print(table(Class_iRDM_df$iRDM_subtype, useNA = "always"))
+
+# 2. Taille du dataset
+print(paste("Nombre d'échantillons:", nrow(Class_iRDM_df)))
+
+# 3. NA dans la réponse
+print(paste("NA dans iRDM_subtype:", sum(is.na(Class_iRDM_df$iRDM_subtype))))
+# \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ #
+
+
+# Separate a dataset in a train and test subsets
+sample_iRDM <- sample(c(TRUE, FALSE), nrow(Class_iRDM_df), replace=TRUE, prob=c(0.7,0.3))
+
+train  <- Class_iRDM_df[sample_iRDM, ]
+test   <- Class_iRDM_df[!sample_iRDM, ]
 
 # Build Class tree
 max_tree_iRDM = rpart(iRDM_subtype ~ ., data = Class_iRDM_df, method = "class", cp = 0) # CP needs to be low to have a complex tree
@@ -132,7 +146,9 @@ plotcp(max_tree_iRDM)  # Represents the cross-validation error as a function of 
 printcp(max_tree_iRDM) # Table version of cross-validation errors as a function of cp
 
 # Determines the value of cp (iRDM) for the lowest cross-validation error (specific gene)
-# cpOpt = max_tree_iRDM$cptable[which.min(max_tree_iRDM$cptable[,2]),1]
+cpOpt = max_tree_iRDM$cptable[which.min(max_tree_iRDM$cptable[,4]),1]
+cpOpt = max_tree_iRDM$cptable[which.min(max_tree_iRDM$cptable[,"xerror"]), "CP"] # Answer from forum and IA (same effect)
+print(paste("CP optimal:", round(cpOpt, 6)))
 
 # The best tree
 pruned_tree_iRDM = rpart(
@@ -145,25 +161,10 @@ pruned_tree_iRDM = rpart(
 printcp(pruned_tree_iRDM)
 rpart.plot(pruned_tree_iRDM, cex = 0.6, box.palette = "Blues", extra = 1)
 
-# ///////////////////////////////////////////////////////////////////////////  #
-# Forum + IA CHEATING
-cpOpt <- max_tree_iRDM$cptable[which.min(max_tree_iRDM$cptable[,"xerror"]), "CP"]
-print(paste("CP optimal:", round(cpOpt, 6)))
-
-# 1. Distribution des classes (CAUSE #1)
-print("=== DISTRIBUTION iRDM_subtype ===")
-print(table(Class_iRDM_df$iRDM_subtype, useNA = "always"))
-
-# 2. Taille du dataset
-print(paste("Nombre d'échantillons:", nrow(Class_iRDM_df)))
-
-# 3. NA dans la réponse
-print(paste("NA dans iRDM_subtype:", sum(is.na(Class_iRDM_df$iRDM_subtype))))
-# \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\ #
 
 # Prediction on a new non-annotated dataset
 
-x = pruned_tree$variable.importance
+x = pruned_tree_iRDM$variable.importance
 df_importance_iRDM = data.frame(
   Variable = factor(names(x),
   levels = names(x)),
